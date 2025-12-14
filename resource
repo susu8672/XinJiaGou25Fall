@@ -1,0 +1,585 @@
+{% extends "base.html" %}
+
+{% block title %}资源中心 - AICove{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="container">
+        <h1>资源中心</h1>
+        <p>AI 术语表、推荐阅读与优质课程</p>
+    </div>
+</div>
+
+<div class="container">
+    <div class="resources-tabs">
+        <button class="tab-btn active" onclick="switchTab('glossary', event)">AI术语表</button>
+        <button class="tab-btn" onclick="switchTab('reading', event)">推荐阅读</button>
+        <button class="tab-btn" onclick="switchTab('courses', event)">推荐课程</button>
+    </div>
+
+
+    <!-- AI术语表 -->
+    <div id="glossary-tab" class="tab-content active">
+
+        <!-- ✅ 全局搜索：改为提交到后端 q 参数 -->
+        <form class="glossary-search" method="get" action="{{ url_for('main.resources') }}">
+            <input type="hidden" name="letter" value="{{ current_letter }}">
+            <input type="text"
+                   id="term-search"
+                   name="q"
+                   value="{{ q or '' }}"
+                   placeholder="搜索术语（全库）..."
+                   autocomplete="off">
+        </form>
+
+        <!-- A-Z 导航（每页都完整显示；点击跳转到该字母的第一页；保留搜索词） -->
+        <div class="alphabet-nav sticky-az">
+            {% for letter in letters %}
+                <a href="{{ url_for('main.resources', letter=letter, page=1, q=q) }}"
+                   class="alphabet-link {% if letter == current_letter %}active{% endif %}">
+                    {{ letter }}
+                </a>
+            {% endfor %}
+        </div>
+
+        <!-- 术语列表：当前字母（如果你后端现在是“按字母过滤 + 分页”，这样渲染最合理） -->
+        <div class="terms-list">
+            <div class="letter-section" id="{{ current_letter }}">
+                <h2 style="margin-top: 1rem;">{{ current_letter }}</h2>
+
+                {% for term in terms_by_letter[current_letter] %}
+                    <div class="term-item"
+                         data-letter="{{ current_letter }}"
+                         data-term="{{ term.term.lower() }}">
+                        <h3>{{ term.term }}</h3>
+                        <p class="term-definition">{{ term.definition }}</p>
+
+                        {% if term.category %}
+                            <span class="term-category">{{ term.category }}</span>
+                        {% endif %}
+
+                        {% if term.examples %}
+                            <div class="term-examples">
+                                <strong>示例：</strong>{{ term.examples }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+
+                {% if terms_by_letter[current_letter]|length == 0 %}
+                    <p style="padding: 1rem; color: var(--text-light);">
+                        {% if q %}
+                            未找到与“{{ q }}”相关的术语（当前字母：{{ current_letter }}）。
+                        {% else %}
+                            当前字母暂无术语。
+                        {% endif %}
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 分页：显示当前页前后 5 个页码（带省略号），包含上一页/下一页 -->
+        <div class="pagination compact">
+
+            <!-- 上一页 -->
+            {% if page > 1 %}
+                <a href="{{ url_for('main.resources', letter=current_letter, page=page-1, q=q) }}" class="page-btn">上一页</a>
+            {% else %}
+                <span class="page-btn disabled">上一页</span>
+            {% endif %}
+
+            {# 计算窗口：当前页前后 5 页 #}
+            {% set start = page - 5 %}
+            {% set end = page + 5 %}
+
+            {% if start < 1 %}{% set start = 1 %}{% endif %}
+            {% if end > total_pages %}{% set end = total_pages %}{% endif %}
+
+            {# 如果 start > 1，先显示第 1 页，并加省略号 #}
+            {% if start > 1 %}
+                <a href="{{ url_for('main.resources', letter=current_letter, page=1, q=q) }}" class="page-btn">1</a>
+                {% if start > 2 %}
+                    <span class="page-ellipsis">…</span>
+                {% endif %}
+            {% endif %}
+
+            {# 中间窗口页码 #}
+            {% for p in range(start, end + 1) %}
+                <a href="{{ url_for('main.resources', letter=current_letter, page=p, q=q) }}"
+                class="page-btn {% if p == page %}active{% endif %}">
+                    {{ p }}
+                </a>
+            {% endfor %}
+
+            {# 如果 end < total_pages，显示省略号和最后一页 #}
+            {% if end < total_pages %}
+                {% if end < total_pages - 1 %}
+                    <span class="page-ellipsis">…</span>
+                {% endif %}
+                <a href="{{ url_for('main.resources', letter=current_letter, page=total_pages, q=q) }}" class="page-btn">{{ total_pages }}</a>
+            {% endif %}
+
+            <!-- 下一页 -->
+            {% if page < total_pages %}
+                <a href="{{ url_for('main.resources', letter=current_letter, page=page+1, q=q) }}" class="page-btn">下一页</a>
+            {% else %}
+                <span class="page-btn disabled">下一页</span>
+            {% endif %}
+
+        </div>
+
+
+
+    <!-- 推荐阅读 -->
+    <div id="reading-tab" class="tab-content">
+        <!-- 分区 1：新手上车 -->
+        <div class="reading-section">
+            <div class="reading-section-header">
+                <h2>新手上车</h2>
+                <div class="mini-filters" data-scope="beginner">
+                    <button class="mini-filter-btn active" onclick="filterReadingSection('beginner', 'all', event)">全部</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('beginner', '书籍', event)">书籍</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('beginner', '论文/期刊', event)">论文/期刊</button>
+                </div>
+            </div>
+
+            <div class="resources-grid">
+                {% for resource in resources %}
+                    {% if resource.level == '新手上车' %}
+                    <div class="resource-card card-animate hover-lift"
+                        data-scope="beginner"
+                        data-type="{{ resource.type_mini }}">
+                        {% if resource.cover_image %}
+                        <img src="{{ resource.cover_image }}" alt="{{ resource.title }}" class="resource-cover">
+                        {% endif %}
+                        <div class="resource-content">
+                            <h3>{{ resource.title }}</h3>
+                            {% if resource.author %}
+                            <p class="resource-author">作者：{{ resource.author }}</p>
+                            {% endif %}
+                            <p class="resource-description">{{ resource.description[:150] }}...</p>
+                            <div class="resource-footer">
+                                <span class="resource-type">{{ resource.type_mini }}</span>
+                                {% if resource.url %}
+                                <a href="{{ resource.url }}" target="_blank" class="btn btn-primary btn-small">查看</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 分区 2：进阶学习 -->
+        <div class="reading-section">
+            <div class="reading-section-header">
+                <h2>进阶学习</h2>
+                <div class="mini-filters" data-scope="intermediate">
+                    <button class="mini-filter-btn active" onclick="filterReadingSection('intermediate', 'all', event)">全部</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('intermediate', '书籍', event)">书籍</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('intermediate', '论文/期刊', event)">论文/期刊</button>
+                </div>
+            </div>
+
+            <div class="resources-grid">
+                {% for resource in resources %}
+                    {% if resource.level == '进阶学习' %}
+                    <div class="resource-card card-animate hover-lift"
+                        data-scope="intermediate"
+                        data-type="{{ resource.type_mini }}">
+                        {% if resource.cover_image %}
+                        <img src="{{ resource.cover_image }}" alt="{{ resource.title }}" class="resource-cover">
+                        {% endif %}
+                        <div class="resource-content">
+                            <h3>{{ resource.title }}</h3>
+                            {% if resource.author %}
+                            <p class="resource-author">作者：{{ resource.author }}</p>
+                            {% endif %}
+                            <p class="resource-description">{{ resource.description[:150] }}...</p>
+                            <div class="resource-footer">
+                                <span class="resource-type">{{ resource.type_mini }}</span>
+                                {% if resource.url %}
+                                <a href="{{ resource.url }}" target="_blank" class="btn btn-primary btn-small">查看</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 分区 3：专业前沿 -->
+        <div class="reading-section">
+            <div class="reading-section-header">
+                <h2>专业前沿</h2>
+                <div class="mini-filters" data-scope="advanced">
+                    <button class="mini-filter-btn active" onclick="filterReadingSection('advanced', 'all', event)">全部</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('advanced', '书籍', event)">书籍</button>
+                    <button class="mini-filter-btn" onclick="filterReadingSection('advanced', '论文/期刊', event)">论文/期刊</button>
+                </div>
+            </div>
+
+            <div class="resources-grid">
+                {% for resource in resources %}
+                    {% if resource.level == '专业前沿' %}
+                    <div class="resource-card card-animate hover-lift"
+                        data-scope="advanced"
+                        data-type="{{ resource.type_mini }}">
+                        {% if resource.cover_image %}
+                        <img src="{{ resource.cover_image }}" alt="{{ resource.title }}" class="resource-cover">
+                        {% endif %}
+                        <div class="resource-content">
+                            <h3>{{ resource.title }}</h3>
+                            {% if resource.author %}
+                            <p class="resource-author">作者：{{ resource.author }}</p>
+                            {% endif %}
+                            <p class="resource-description">{{ resource.description[:150] }}...</p>
+                            <div class="resource-footer">
+                                <span class="resource-type">{{ resource.type_mini }}</span>
+                                {% if resource.url %}
+                                <a href="{{ resource.url }}" target="_blank" class="btn btn-primary btn-small">查看</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <!-- 推荐课程 -->
+    <div id="courses-tab" class="tab-content">
+        <div class="reading-section">
+            <div class="reading-section-header">
+                <h2>推荐课程</h2>
+                <p style="color: var(--text-light); margin-top: .5rem;">精选入门到进阶的优质课程</p>
+            </div>
+
+            <div class="resources-grid">
+                {% for course in courses %}
+                <div class="resource-card card-animate hover-lift">
+                    {% if course.cover_image %}
+                    <img src="{{ course.cover_image }}" alt="{{ course.title }}" class="resource-cover">
+                    {% endif %}
+                    <div class="resource-content">
+                        <h3>{{ course.title }}</h3>
+                        {% if course.platform %}
+                        <p class="resource-author">平台：{{ course.platform }}</p>
+                        {% endif %}
+                        <p class="resource-description">{{ course.description[:150] }}...</p>
+                        <div class="resource-footer">
+                            <span class="resource-type">课程</span>
+                            {% if course.url %}
+                            <a href="{{ course.url }}" target="_blank" class="btn btn-primary btn-small">查看</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if courses|length == 0 %}
+                <p style="padding: 1rem; color: var(--text-light);">暂无课程内容，你可以先在 mock_data 里补几条测试数据。</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.page-ellipsis{
+  padding: 0 .25rem;
+  color: var(--text-light);
+  font-weight: 700;
+}
+.resources-tabs {
+    display: flex;
+    gap: 1.5rem;
+    margin: 2rem 0;
+    border-bottom: 3px solid var(--border-color);
+}
+
+.tab-btn {
+    padding: 1rem 2.5rem;
+    background: none;
+    border: none;
+    border-bottom: 4px solid transparent;
+    cursor: pointer;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-light);
+    transition: all 0.3s ease;
+    position: relative;
+    bottom: -3px;
+}
+
+.tab-btn:hover { color: var(--primary-color); }
+.tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.glossary-search { margin: 2rem 0; }
+.glossary-search input {
+    width: 100%;
+    max-width: 560px;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+}
+
+.alphabet-nav {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1.2rem 0 2rem;
+    padding: 1rem;
+    background: var(--light-color);
+    border-radius: 8px;
+}
+
+.alphabet-link {
+    padding: 0.5rem 1rem;
+    background: white;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-color);
+    transition: all 0.2s;
+    font-weight: 600;
+}
+.alphabet-link:hover { background: var(--primary-color); color: white; }
+.alphabet-link.active { background: var(--primary-color); color: white; }
+
+/* ✅ A-Z 导航吸顶 */
+.sticky-az{
+    position: sticky;
+    top: 80px; /* 如被顶部导航遮挡，改成 60/100 微调 */
+    z-index: 200;
+    background: var(--light-color);
+}
+
+.terms-list {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+
+.term-item {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.term-item:last-child { border-bottom: none; }
+.term-item h3 { color: var(--primary-color); margin-bottom: 0.5rem; }
+.term-definition { line-height: 1.8; margin-bottom: 0.5rem; }
+
+.term-category {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.term-examples {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--light-color);
+    border-radius: 4px;
+    font-style: italic;
+}
+
+/* ✅ 分页（修复：更稳定 + 带提示） */
+.pagination.compact{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:.35rem;
+    flex-wrap:wrap;
+    margin-top:1.2rem;
+}
+
+.page-btn{
+    padding:.35rem .6rem;
+    border-radius:6px;
+    background:var(--light-color);
+    color:var(--text-color);
+    text-decoration:none;
+    font-weight:700;
+    font-size:.9rem;
+    line-height:1;
+}
+.page-btn:hover{ background:var(--primary-color); color:#fff; }
+.page-btn.active{ background:var(--primary-color); color:#fff; }
+.page-btn.disabled{ opacity:.45; cursor:not-allowed; }
+
+.page-ellipsis{ padding:0 .2rem; color:var(--text-light); font-weight:700; }
+.page-hint{ margin-left:.5rem; color:var(--text-light); font-size:.9rem; }
+
+.reading-filters{
+    display:flex;
+    gap:1rem;
+    margin:2rem 0;
+    flex-wrap:wrap;
+}
+.resources-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+    gap:2rem;
+}
+.resource-card{
+    background:white;
+    border-radius:8px;
+    overflow:hidden;
+    box-shadow:var(--shadow);
+    transition:transform .3s;
+}
+.resource-card:hover{
+    transform:translateY(-5px);
+    box-shadow:var(--shadow-lg);
+}
+.resource-cover{ width:100%; height:200px; object-fit:cover; }
+.resource-content{ padding:1.5rem; }
+.resource-author{ color:var(--text-light); font-size:.9rem; margin-bottom:.5rem; }
+.resource-description{ margin-bottom:1rem; line-height:1.6; }
+.resource-footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding-top:1rem;
+    border-top:1px solid var(--border-color);
+}
+.resource-type{
+    padding:.25rem .75rem;
+    background:var(--light-color);
+    border-radius:12px;
+    font-size:.8rem;
+}
+/* 推荐阅读：分区 */
+.reading-section{
+    margin-bottom: 2.5rem;
+}
+
+.reading-section-header{
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.5rem 0 1rem;
+}
+
+.reading-section-header h2{
+    margin: 0;
+}
+
+/* 小一级按钮组 */
+.mini-filters{
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+
+.mini-filter-btn{
+    padding: .35rem .75rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: white;
+    cursor: pointer;
+    font-size: .9rem;
+    color: var(--text-color);
+    transition: all .2s ease;
+}
+
+.mini-filter-btn:hover{
+    background: var(--light-color);
+}
+
+.mini-filter-btn.active{
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+}
+/* Tab 显示控制：确保 active 的 tab 一定显示 */
+.tab-content { 
+    display: none; 
+}
+
+.tab-content.active { 
+    display: block !important; 
+}
+
+/* 推荐课程/推荐阅读容器别被盖住 */
+#reading-tab, #courses-tab {
+    position: relative;
+    z-index: 1;
+}
+
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterReadingSection(scope, type, event) {
+    const buttons = document.querySelectorAll(`.mini-filters[data-scope="${scope}"] .mini-filter-btn`);
+    buttons.forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    const cards = document.querySelectorAll(`.resource-card[data-scope="${scope}"]`);
+    cards.forEach(card => {
+        if (type === 'all' || card.dataset.type === type) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+function switchTab(tabName, e) {
+    // 1) 切换 tab 容器
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+    const target = document.getElementById(tabName + '-tab');
+    if (target) target.classList.add('active');
+    if (e && e.target) e.target.classList.add('active');
+
+    // 2) ✅ 关键：每次切换到阅读/课程时，强制恢复卡片显示
+    if (tabName === 'reading') {
+        document.querySelectorAll('#reading-tab .resource-card').forEach(card => {
+            card.style.display = 'block';
+        });
+
+        // 阅读每个分区的小按钮复位到“全部”
+        document.querySelectorAll('#reading-tab .mini-filters').forEach(group => {
+            const btns = group.querySelectorAll('.mini-filter-btn');
+            btns.forEach(b => b.classList.remove('active'));
+            if (btns[0]) btns[0].classList.add('active');
+        });
+    }
+
+    if (tabName === 'courses') {
+        document.querySelectorAll('#courses-tab .resource-card').forEach(card => {
+            card.style.display = 'block';
+        });
+    }
+}
+
+
+function filterResources(type) {
+    const cards = document.querySelectorAll('.resource-card');
+    const buttons = document.querySelectorAll('#reading-tab .filter-btn');
+
+    buttons.forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    cards.forEach(card => {
+        card.style.display = (type === 'all' || card.dataset.type === type) ? 'block' : 'none';
+    });
+}
+</script>
+{% endblock %}
